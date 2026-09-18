@@ -106,6 +106,12 @@ func buildIssues(diags []*Diagnostic, linterNameBuilder func(diag *Diagnostic) s
 				continue
 			}
 
+			// Skip suggested fixes with edits related to another file than the file of the diagnostic.
+			// An issue is related to only one file, so those edits are applied to the wrong file.
+			if !isInsideFile(diag.File, sf) {
+				continue
+			}
+
 			nsf := analysis.SuggestedFix{Message: sf.Message}
 
 			for _, edit := range sf.TextEdits {
@@ -153,4 +159,25 @@ func buildIssues(diags []*Diagnostic, linterNameBuilder func(diag *Diagnostic) s
 		}
 	}
 	return issues
+}
+
+// isInsideFile checks that all the edits of a suggested fix are inside the file of the diagnostic.
+// The positions of an edit related to another file are silently clamped by [token.File.Offset]
+// (to 0, or to the size of the file), then applied to the file of the diagnostic.
+func isInsideFile(f *token.File, sf analysis.SuggestedFix) bool {
+	for _, edit := range sf.TextEdits {
+		if !containsPos(f, edit.Pos) {
+			return false
+		}
+
+		if edit.End.IsValid() && !containsPos(f, edit.End) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func containsPos(f *token.File, p token.Pos) bool {
+	return token.Pos(f.Base()) <= p && p <= token.Pos(f.Base()+f.Size())
 }
